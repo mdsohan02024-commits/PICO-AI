@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PICO</title>
+<link rel="icon" id="fav" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&display=swap" rel="stylesheet">
@@ -31,6 +32,8 @@ aside{background:var(--side);display:flex;flex-direction:column;padding:16px 12p
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px}
 .logo{width:34px;height:34px;border-radius:11px;background:var(--me);position:relative;flex:none}
 .logo::after{content:"";position:absolute;width:10px;height:10px;border-radius:50%;background:var(--dot);right:6px;top:6px}
+.logo.has{background:none}.logo.has::after{display:none}
+.logo img{width:100%;height:100%;object-fit:contain;display:block;border-radius:inherit}
 .brand b{font-size:24px;font-weight:700;letter-spacing:.04em}
 .new{background:var(--me);color:#fff;border-radius:12px;padding:11px 14px;font-weight:500;text-align:left}
 .new:hover{filter:brightness(1.1)}
@@ -123,7 +126,7 @@ dialog small{display:block;color:var(--mute);margin-top:6px;font-size:13px}
     <div class="brand"><div class="logo"></div><b>PICO</b></div>
     <button class="new" id="newChat">+ New chat</button>
     <nav class="hist" id="hist" aria-label="Chat history"></nav>
-    <div class="foot"><button id="openSet">Settings</button></div>
+    <div class="foot"><button id="wipe">Delete all chats</button></div>
   </aside>
 
   <main>
@@ -139,34 +142,17 @@ dialog small{display:block;color:var(--mute);margin-top:6px;font-size:13px}
   </main>
 </div>
 
-<dialog id="set">
-  <h2>Settings</h2>
-  <label for="key">Anthropic API key</label>
-  <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off">
-  <small>Saved only in this browser. Never put your key in the code you upload to GitHub.</small>
-  <label for="model">Model</label>
-  <select id="model">
-    <option value="claude-sonnet-5-5">Sonnet 5.5 (balanced)</option>
-    <option value="claude-haiku-5-5">Haiku 5.5 (fastest)</option>
-    <option value="claude-opus-5-5">Opus 5.5 (most capable)</option>
-  </select>
-  <div class="row">
-    <button class="danger" id="wipe">Delete all chats</button>
-    <span style="display:flex;gap:8px"><button id="cancel">Cancel</button><button class="go" id="save">Save</button></span>
-  </div>
-</dialog>
-
 <script>
 const $ = s => document.querySelector(s);
-const SYSTEM = "You are PICO, a friendly, clear and concise AI assistant. Use short paragraphs, and use markdown for lists and code.";
+/* ====== SETUP: paste your Cloudflare Worker URL here ====== */
+const API_URL = "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev";
+/* =========================================================== */
 const store = {
   get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 let chats = store.get("pico_chats", []);
 let cur = store.get("pico_cur", null);
-let key = store.get("pico_key", "");
-let model = store.get("pico_model", "claude-sonnet-5-5");
 let busy = false, ctrl = null;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -224,6 +210,19 @@ function msgEl(role, html, cls){
   if (role === "user") b.textContent = html; else b.innerHTML = html;
   return m;
 }
+let LOGO_SRC = null;
+function applyLogo(){
+  if (!LOGO_SRC) return;
+  document.querySelectorAll(".logo:not(.has)").forEach(l => { l.classList.add("has"); l.innerHTML = '<img src="' + LOGO_SRC + '" alt="">'; });
+  $("#fav").href = LOGO_SRC;
+}
+(function findLogo(){
+  const names = ["logo.1.png", "logo.1.jpg", "logo.1.jpeg", "logo.1.webp", "logo.1.svg", "logo.1"];
+  let i = 0; const img = new Image();
+  img.onload = () => { LOGO_SRC = img.src; applyLogo(); };
+  img.onerror = () => { if (i < names.length) img.src = names[i++]; };
+  img.onerror();
+})();
 function renderChat(){
   const w = $("#wrap");
   w.innerHTML = "";
@@ -240,6 +239,7 @@ function renderChat(){
     for (const m of c.messages) w.appendChild(msgEl(m.role, m.role === "user" ? m.content : md(m.content)));
   }
   renderHist();
+  applyLogo();
   scrollEnd();
 }
 function scrollEnd(){ const l = $("#log"); l.scrollTop = l.scrollHeight; }
@@ -270,7 +270,6 @@ function setBusy(b){
 async function send(){
   const inp = $("#in"), text = inp.value.trim();
   if (!text || busy) return;
-  if (!key){ openSettings(); return; }
   if (!chat()) newChat();
   const c = chat();
   c.messages.push({ role: "user", content: text });
@@ -283,16 +282,10 @@ async function send(){
   let full = "";
   setBusy(true); ctrl = new AbortController();
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(API_URL, {
       method: "POST", signal: ctrl.signal,
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({ model, max_tokens: 2000, stream: true, system: SYSTEM,
-        messages: c.messages.map(m => ({ role: m.role, content: m.content })) })
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: c.messages.map(m => ({ role: m.role, content: m.content })) })
     });
     if (!res.ok){
       let msg = "Request failed (" + res.status + ").";
@@ -325,9 +318,7 @@ async function send(){
     } else {
       c.messages.pop(); inp.value = text; grow();
       bub.classList.add("err");
-      bub.textContent = /api[-_ ]?key|authentication|401/i.test(e.message)
-        ? "Your API key was not accepted. Check it in Settings."
-        : e.message;
+      bub.textContent = e.message === "Failed to fetch" ? "Can\u2019t reach PICO right now. Check your connection and try again." : e.message;
       setBusy(false); ctrl = null; save(); renderHist();
       return;
     }
@@ -353,17 +344,9 @@ $("#wrap").addEventListener("click", e => {
 const closeMenu = () => document.body.classList.remove("open");
 $("#menu").onclick = () => document.body.classList.toggle("open");
 $("#log").addEventListener("click", closeMenu);
-function openSettings(){ $("#key").value = key; $("#model").value = model; $("#set").showModal(); }
-$("#openSet").onclick = openSettings;
-$("#cancel").onclick = () => $("#set").close();
-$("#save").onclick = () => {
-  key = $("#key").value.trim(); model = $("#model").value;
-  store.set("pico_key", key); store.set("pico_model", model);
-  $("#set").close(); $("#in").focus();
-};
 $("#wipe").onclick = () => {
   if (!confirm("Delete all chats? This can't be undone.")) return;
-  chats = []; cur = null; save(); renderChat(); $("#set").close();
+  chats = []; cur = null; save(); renderChat(); closeMenu();
 };
 
 if (!chat()) cur = chats[0] ? chats[0].id : null;
