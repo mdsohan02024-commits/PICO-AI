@@ -145,7 +145,7 @@ dialog small{display:block;color:var(--mute);margin-top:6px;font-size:13px}
 <script>
 const $ = s => document.querySelector(s);
 /* ====== SETUP: paste your Cloudflare Worker URL here ====== */
-const API_URL = "https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev";
+const API_URL = "https://pico.yourname.workers.dev";
 /* =========================================================== */
 const store = {
   get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
