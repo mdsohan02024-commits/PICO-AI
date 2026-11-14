@@ -217,7 +217,7 @@ function applyLogo(){
   $("#fav").href = LOGO_SRC;
 }
 (function findLogo(){
-  const names = ["logo.1.png", "logo.1.jpg", "logo.1.jpeg", "logo.1.webp", "logo.1.svg", "logo.1"];
+  const names = ["logo1.png"];
   let i = 0; const img = new Image();
   img.onload = () => { LOGO_SRC = img.src; applyLogo(); };
   img.onerror = () => { if (i < names.length) img.src = names[i++]; };
